@@ -1,0 +1,158 @@
+#! /usr/bin/perl -w
+
+use Net::SNMP;
+use Time::HiRes qw /gettimeofday nanosleep/;
+use POSIX qw / fmod /;
+use Math::Round;
+
+no warnings qw(uninitialized);
+
+##### PreFlight initializing and setting the variables #####
+my $loop = 1; 
+my $samples = 0; 
+my $timeticks = 0;
+my @list = (); 
+my @oid = ();
+my @agent = split /[:]/,$ARGV[0];
+my ($ip,$port,$community) = @agent;
+my $time_interval = 1/$ARGV[1];
+my $samples_required = $ARGV[2];
+
+push(@list,"1.3.6.1.2.1.1.3.0");
+
+foreach $oid(3 .. $#ARGV)                       ## storing the oids in a list
+{
+	push(@list,$ARGV[$oid]);
+	$oid{"$ARGV[$oid]"} = 0;
+}
+
+sub DataRate {
+
+		
+			foreach $val (1 .. ($#list))
+			{
+				### for 32 bit counters #########
+				if (($types->{"$list[$val]"}) == 65)
+				{
+					$new = $result->{"$list[$val]"};
+					if ($oid{"$list[$val]"} > $new)
+					{
+						$rate = sprintf("%0d",(((2**32) + ($new) - ($oid{"$list[$val]"}))/$inter_sample_time));
+						push (@out, "| $rate");
+						$oid{"$list[$val]"} = $new;
+					}
+					else 
+					{
+						$rate = sprintf("%0d",(($new - $oid{"$list[$val]"})/$inter_sample_time));
+						push (@out, "| $rate");
+						$oid{"$list[$val]"} = $new;
+					}
+				}
+				### for 64 bit counters #########
+				if (($types->{"$list[$val]"}) == 70)
+				{
+					$new = $result->{"$list[$val]"};
+					if ($oid{"$list[$val]"} > $new)
+					{
+						$rate = sprintf("%0d",(((2**64) + ($new) - ($oid{"$list[$val]"}))/$inter_sample_time));
+						push (@out, "| $rate");
+						$oid{"$list[$val]"} = $new;
+					}
+					else 
+					{
+						$rate = sprintf("%0d",(($new - $oid{"$list[$val]"})/$inter_sample_time));
+						push (@out, "| $rate");
+						$oid{"$list[$val]"} = $new;
+					}
+				}
+			}
+			
+}
+
+
+while () 
+{
+	$start = gettimeofday;
+	######   starting a new snmp session   #########
+	($session, $error) = Net::SNMP->session(
+					    -hostname => $ip,
+					    -community=> $community,
+					    -version=> "2c",
+					    -port     => $port,
+					    -translate=> [-timeticks => 0x0]	
+					);
+	if (!defined($session))
+	{
+		  printf "Error: %s.\n", $error;
+		  exit;
+	}
+
+	$result = $session->get_request(
+			  -varbindlist      => \@list,
+       			);
+	if(!defined($result))
+	{
+		printf("Timeout: %s.\n", $session->error());
+	}
+
+	$types = $session->var_bind_types();
+	if(!defined($result))
+	{
+		printf("Timeout: %s.\n", $session->error());
+	}
+	else
+	{
+		if (($result->{'1.3.6.1.2.1.1.3.0'}) < $timeticks)              ## to detect the snmpd restart
+		{
+			print "snmpd service restart found...\n";
+			$loop = 1; 
+			$timeticks = 0;
+		}
+		$diff_timeticks = (($result->{'1.3.6.1.2.1.1.3.0'} - $timeticks)/100);
+		$timeticks = $result->{'1.3.6.1.2.1.1.3.0'};
+		push(@out, time);
+		if ($diff_timeticks !=0)
+		{
+			$inter_sample_time = round($diff_timeticks);
+			if ($inter_sample_time == 0){
+				$inter_sample_time = $diff_timeticks;
+			}
+			DataRate();
+			if ($loop > 1)
+			{
+				print "@out\n";
+				$samples = $samples + 1;
+			}
+		}
+		@out = ();
+		$loop = $loop + 1;
+		exit if ($samples == $samples_required);
+		
+
+		$execution = gettimeofday - $start;
+  
+		if ($execution < $time_interval)
+		{
+			#print $execution."\n";
+			$actual_sleep = sprintf("%9f",($time_interval - $execution)) ;
+			$nano = $actual_sleep * 1000000000;  ## converting to nano seconds
+                         nanosleep($nano);
+		}
+                 else
+		{
+			 #print $execution."\n";
+			 $modulus = fmod($execution,$time_interval); 
+			 $actual_sleep = sprintf("%8f",($time_interval - $modulus)) ;
+			  
+			 $nano = $actual_sleep * 1000000000;  ## converting to nano seconds
+                         nanosleep($nano);
+
+                 }
+
+		$session->close();
+		
+	}
+
+	
+}
+

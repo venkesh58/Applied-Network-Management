@@ -1,0 +1,28 @@
+#A1
+
+snmpget -v1 127.0.0.1:161 -cpublic 1.3.6.1.4.1.4171.40.1 1.3.6.1.4.1.4171.40.1.2 1.3.6.1.4.1.4171.40.1.3
+
+
+#A2
+
+perl prober 127.0.0.1:161:public 1 5 1.3.6.1.4.1.4171.40.1 1.3.6.1.4.1.4171.40.2 1.3.6.1.4.1.4171.40.3
+
+
+#A3
+
+sudo python backend 127.0.0.1:161:public 1 1.3.6.1.4.1.4171.40.1 1.3.6.1.4.1.4171.40.2 1.3.6.1.4.1.4171.40.3
+
+#A4
+
+perl traphandler
+php -S localhost:8000
+curl -s "http://127.0.0.1:8000/setTrapR.php?ip=192.168.184.1&port=161&community=public"
+curl localhost:8000/getTrapR.php
+snmptrapd -Onq -n -f
+sudo snmptrap -v 1 -c public 127.0.0.1:50162 .1.3.6.1.4.1.41717.10 10.0.2.3 6 247 ' ' .1.3.6.1.4.1.41717.10.1 s "bubbly.bth.se" .1.3.6.1.4.1.41717.10.2 i "1"
+curl localhost:8000/getStatus.php
+sudo tcpdump -n -i ens33 #show_request
+sudo snmptrap -v 1 -c public 127.0.0.1:50162 .1.3.6.1.4.1.41717.10 10.0.2.3 6 247 ' ' .1.3.6.1.4.1.41717.10.1 s "bubbly.bth.se" .1.3.6.1.4.1.41717.10.2 i "2"
+
+
+
